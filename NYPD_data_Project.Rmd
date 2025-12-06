@@ -1,0 +1,303 @@
+---
+title: "Week3_NYPD_Project"
+author: "Sneha"
+date: "2025-12-05"
+output: pdf_document
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+
+
+```
+
+```{r}
+#Loading Data
+
+url_NYPD <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+
+NYPD_raw <- read_csv(url_NYPD, show_col_types = FALSE)
+
+glimpse(NYPD_raw)
+
+
+```
+
+```{r}
+#Cleaning Data
+
+NYPD_clean <- NYPD_raw %>%
+  select(
+    OCCUR_DATE, OCCUR_TIME, BORO, PRECINCT,
+    STATISTICAL_MURDER_FLAG, VIC_AGE_GROUP, VIC_SEX, VIC_RACE
+  ) %>%
+  mutate(
+    OCCUR_DATE = mdy(OCCUR_DATE),
+    OCCUR_TIME = hms(OCCUR_TIME),
+    Year       = year(OCCUR_DATE),
+    Month      = month(OCCUR_DATE, label = TRUE, abbr = TRUE),
+    Dow        = wday(OCCUR_DATE, label = TRUE, abbr = TRUE),
+    Hour       = hour(OCCUR_TIME),
+    STATISTICAL_MURDER_FLAG = as.logical(STATISTICAL_MURDER_FLAG),
+    Shootings  = 1
+  )
+
+summary(NYPD_clean)
+
+```
+```{r}
+#Missing values
+NYPD_clean %>%
+  summarize(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
+  arrange(desc(n_missing))
+```
+
+```{r}
+#Figure 1 - Shootings by Borough
+NYPD_clean %>%
+  ggplot(aes(BORO, fill = BORO)) +
+  geom_bar() +
+  labs(
+    title = "NYPD Shooting Incidents by Borough",
+    subtitle = "2006–2024",
+    x = "NYC Boroughs",
+    y = "Total Shootings",
+    caption = "Figure 1 - Shootings by Borough"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+#Figure 2 - Shootings by Year
+NYPD_clean %>%
+  ggplot(aes(Year)) +
+  geom_bar(fill = "blue") +
+  labs(
+    title = "NYPD Shooting Incidents by Year",
+    subtitle = "2006–2024",
+    x = "Year",
+    y = "Total Shootings",
+    caption = "Figure 2 - Shootings by Year"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# Yearly summary data
+
+NYPD_year <- NYPD_clean %>%
+  group_by(Year) %>%
+  summarize(
+    Shootings = sum(Shootings),
+    Murders = sum(STATISTICAL_MURDER_FLAG),
+    .groups = "drop"
+  )
+
+NYPD_year %>% slice_max(Shootings, n = 4)
+NYPD_year %>% slice_min(Shootings, n = 4)
+
+```
+
+```{r}
+#Yearly Trend
+
+NYPD_year %>%
+  ggplot(aes(Year, Shootings)) +
+  geom_line() +
+  geom_point(color = "blue") +
+  labs(
+    title = "NYPD Shooting Incidents by Year",
+    subtitle = "2006–2024",
+    x = "Year",
+    y = "Total Shootings",
+    caption = "Figure 3-Yearly Trend"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# Bourough yearly summary
+
+NYPD_boro_year <- NYPD_clean %>%
+  group_by(BORO, Year) %>%
+  summarize(
+    Shootings = sum(Shootings),
+    Murders = sum(STATISTICAL_MURDER_FLAG),
+    .groups = "drop"
+  )
+
+NYPD_boro_total <- NYPD_boro_year %>%
+  group_by(BORO) %>%
+  summarize(Shootings = sum(Shootings))
+```
+
+```{r}
+NYPD_boro_year %>%
+  ggplot(aes(Year, Shootings, color = BORO)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "NYPD Shootings by Borough Over Time",
+    subtitle = "2006–2024",
+    x = "Year",
+    y = "Shootings",
+    caption = "Figure 4 - Shootings by Borough Over Time"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+#Daily Shootings
+NYPD_date <- NYPD_clean %>%
+  group_by(OCCUR_DATE) %>%
+  summarize(
+    Shootings = sum(Shootings),
+    Murders = sum(STATISTICAL_MURDER_FLAG),
+    .groups = "drop"
+  )
+
+NYPD_date %>% slice_max(Shootings, n = 2)
+
+```
+```{r}
+#Shootings Per Day
+NYPD_date %>%
+  ggplot(aes(OCCUR_DATE, Shootings)) +
+  geom_line() +
+  scale_x_date(date_labels = "%Y %b") +
+  labs(
+    title = "NYPD Shootings Per Day",
+    subtitle = "2006–2024",
+    x = "Date",
+    y = "Shootings",
+    caption = "Figure 5 - Shootings Per Day"
+  ) +
+  theme_minimal()
+
+```
+```{r}
+#Shootings by Day of Year
+NYPD_time_year <- NYPD_clean %>%
+  mutate(DayOfYear = as.Date(format(OCCUR_DATE, "%m-%d"), "%m-%d")) %>%
+  group_by(DayOfYear) %>%
+  summarize(
+    Shootings = sum(Shootings),
+    Murders = sum(STATISTICAL_MURDER_FLAG),
+    .groups = "drop"
+  )
+```
+
+
+```{r}
+#Shootings by Day of Year
+NYPD_time_year %>%
+  ggplot(aes(DayOfYear, Shootings)) +
+  geom_line() +
+  geom_point(
+    data = NYPD_time_year %>% slice_max(Shootings, n = 2),
+    aes(color = "Peak Days")
+  ) +
+  scale_x_date(date_labels = "%b") +
+  labs(
+    title = "NYPD Shootings by Day of Year",
+    subtitle = "2006–2024",
+    x = "Day",
+    y = "Shootings",
+    color = "",
+    caption = "Figure 6 - Shootings by Day of Year"
+  ) +
+  theme_minimal()
+
+```
+```{r}
+#Shootings by Time of Day
+
+NYPD_time_day <- NYPD_clean %>%
+  group_by(OCCUR_TIME) %>%
+  summarize(
+    Shootings = sum(Shootings),
+    Murders = sum(STATISTICAL_MURDER_FLAG),
+    .groups = "drop"
+  )
+
+```
+
+```{r}
+#Shootings by Time of Day
+NYPD_time_day %>%
+  ggplot(aes(OCCUR_TIME, Shootings)) +
+  geom_line() +
+  scale_x_time() +
+  labs(
+    title = "NYPD Shootings by Time of Day",
+    subtitle = "2006–2024",
+    x = "Time (24-hour)",
+    y = "Shootings",
+    caption = "Figure 7 - Shootings by Time of Day"
+  ) +
+  theme_minimal()
+
+```
+```{r}
+NYPD_clean %>%
+  count(Dow, Hour, name = "Shootings") %>%
+  ggplot(aes(Hour, Dow, fill = Shootings)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(
+    title = "Heatmap of Shootings by Day of Week and Hour",
+    x = "Hour of day (24h)",
+    y = "Day of week",
+    fill = "Shootings"
+  )
+```
+
+```{r}
+#Model
+NYPD_time_hour <- NYPD_clean %>%
+  mutate(Hour = hour(OCCUR_TIME)) %>%
+  group_by(Hour) %>%
+  summarize(
+    Shootings = sum(Shootings),
+    Murders = sum(STATISTICAL_MURDER_FLAG),
+    .groups = "drop"
+  ) %>%
+  mutate(Hour2 = Hour^2)
+
+model <- lm(Shootings ~ Hour + Hour2, data = NYPD_time_hour)
+summary(model)
+```
+```{r}
+#Hourly Shootings with Quadratic Fit
+NYPD_time_hour %>%
+  ggplot(aes(Hour, Shootings)) +
+  geom_point(aes(color = "Data Points")) +
+  stat_smooth(
+    aes(color = "Quadratic Fit"),
+    method = "lm",
+    formula = y ~ x + I(x^2),
+    size = 1
+  ) +
+  labs(
+    title = "NYPD Shootings by Hour of Day",
+    subtitle = "2006–2024",
+    x = "Hour (24-hour)",
+    y = "Shootings",
+    color = "Legend",
+    caption = "Figure 8"
+  ) +
+  theme_minimal()
+
+
+```
+
